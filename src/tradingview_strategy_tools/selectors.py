@@ -68,9 +68,22 @@ class Selectors:
     )
     # Present when Strategy Tester panel is open
     date_range_menu: str = 'button[data-qa-id="date-range-menu"]'
-    date_range_preset_button: str = "div.button-XNUivTou"
-    date_range_input: str = 'input[data-qa-id="ui-lib-Input-input"]'
-    date_range_submit: str = 'button[name="submit"]'
+    # First popup after clicking date-range menu (preset list)
+    date_range_preset_popup: str = "div.mainScrollWrapper-go0ZeNQF"
+    date_range_preset_button: str = (
+        "div.mainScrollWrapper-go0ZeNQF div.button-XNUivTou"
+    )
+    # Second popup after choosing custom range
+    date_range_dialog: str = 'div[data-name="custom-date-range-dialog"]'
+    date_range_input: str = (
+        'div[data-name="custom-date-range-dialog"] '
+        'input[data-qa-id="ui-lib-Input-input"]'
+    )
+    date_range_submit: str = (
+        'div[data-name="custom-date-range-dialog"] button[name="submit"]'
+    )
+    # Toast after date range / report refresh completes
+    snackbar_container: str = "#snackbar-container"
 
     # --- Strategy Report ---
     # Shown when the strategy made no trades in the selected period

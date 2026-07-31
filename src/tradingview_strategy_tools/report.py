@@ -9,14 +9,19 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Page
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from tradingview_strategy_tools.browser import capture_diagnostics
-from tradingview_strategy_tools.exceptions import DeepBacktestError, ReportExtractionError
-from tradingview_strategy_tools.models import BacktestConfig, StrategyReportData
+from tradingview_strategy_tools.exceptions import (DeepBacktestError,
+                                                   ReportExtractionError)
+from tradingview_strategy_tools.models import (BacktestConfig,
+                                               StrategyReportData)
 from tradingview_strategy_tools.selectors import SELECTORS
 
 _EMPTY_REPORT_TITLE = "This report requires trade data"
+_REPORT_UPDATED_SNACKBAR = "The report has been updated successfully"
+_REPORT_UPDATED_TIMEOUT_MS = 120_000
 _NO_TRADES_MESSAGE = (
     "success, but this strategy did not make any trades in the selected period "
     "(TradingView: 'This report requires trade data'). "
@@ -63,26 +68,51 @@ def set_deep_backtest_dates(page: Page, config: BacktestConfig) -> None:
     try:
         menu = page.locator(SELECTORS.date_range_menu)
         menu.first.wait_for(state="visible", timeout=config.timeout_ms)
+        page.wait_for_timeout(300)
         menu.first.click()
 
+        # Preset list popup (scoped — avoid other div.button-XNUivTou on page)
+        preset_popup = page.locator(SELECTORS.date_range_preset_popup)
+        preset_popup.first.wait_for(state="visible", timeout=config.timeout_ms)
         presets = page.locator(SELECTORS.date_range_preset_button)
         presets.last.wait_for(state="visible", timeout=config.timeout_ms)
+        page.wait_for_timeout(300)
         presets.last.click()
 
+        # Custom date-range dialog
+        dialog = page.locator(SELECTORS.date_range_dialog)
+        dialog.first.wait_for(state="visible", timeout=config.timeout_ms)
         inputs = page.locator(SELECTORS.date_range_input)
         inputs.nth(0).wait_for(state="visible", timeout=config.timeout_ms)
         inputs.nth(1).wait_for(state="visible", timeout=config.timeout_ms)
 
         inputs.nth(0).click()
+        page.wait_for_timeout(300)
         inputs.nth(0).fill("")
+        page.wait_for_timeout(300)
         inputs.nth(0).fill(start)
+        page.wait_for_timeout(300)
         inputs.nth(1).click()
+        page.wait_for_timeout(300)
         inputs.nth(1).fill("")
+        page.wait_for_timeout(300)
         inputs.nth(1).fill(end)
+        page.wait_for_timeout(300)
 
         submit = page.locator(SELECTORS.date_range_submit)
         submit.first.wait_for(state="visible", timeout=config.timeout_ms)
         submit.first.click()
+        page.wait_for_timeout(300)
+
+        # Wait until TradingView confirms the report refresh (max 120s).
+        page.wait_for_function(
+            """([sel, expected]) => {
+                const el = document.querySelector(sel);
+                return !!el && (el.innerText || '').trim() === expected;
+            }""",
+            arg=[SELECTORS.snackbar_container, _REPORT_UPDATED_SNACKBAR],
+            timeout=_REPORT_UPDATED_TIMEOUT_MS,
+        )
     except Exception as exc:
         shot = capture_diagnostics(page, config.diagnostics_dir, "set_deep_dates")
         raise DeepBacktestError(
@@ -212,7 +242,6 @@ def _extract_initial_capital(page: Page, timeout_ms: int) -> str | None:
 
 def extract_strategy_report(page: Page, config: BacktestConfig) -> StrategyReportData:
     try:
-        page.wait_for_timeout(1_000)
         initial_capital = _extract_initial_capital(page, config.timeout_ms)
 
         if _report_requires_trade_data(page):
