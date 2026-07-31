@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(result.to_stdout_dict(), ensure_ascii=False, indent=2))
+    print(json.dumps(result.to_stdout_dict(), ensure_ascii=False))
     return 0
 
 
