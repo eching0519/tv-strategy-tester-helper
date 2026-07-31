@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# TradingView secrets / session
+credentials.json
+config.json
+*.credentials.json
+data/
+tradingview_login.json
+**/tradingview_login.json
+
+# Diagnostics
+screenshots/
+*.png
+artifacts/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
