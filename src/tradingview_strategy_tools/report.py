@@ -35,6 +35,95 @@ def _format_tv_date(d: date) -> str:
     return d.isoformat()
 
 
+_SNACKBAR_IS_UPDATED_JS = """([sel, expected]) => {
+    const el = document.querySelector(sel);
+    return !!el && (el.innerText || '').trim() === expected;
+}"""
+
+_SNACKBAR_NOT_UPDATED_JS = """([sel, expected]) => {
+    const el = document.querySelector(sel);
+    return !el || (el.innerText || '').trim() !== expected;
+}"""
+
+# Initial load after Pine: snackbar may already be gone — also accept report UI.
+_REPORT_READY_JS = """([snackbarSel, expected, capitalSel, keyFactsSel, emptySel]) => {
+    const el = document.querySelector(snackbarSel);
+    if (el && (el.innerText || '').trim() === expected) return true;
+    const visible = (sel) => {
+        const n = document.querySelector(sel);
+        if (!n) return false;
+        const r = n.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    };
+    return visible(capitalSel) || visible(keyFactsSel) || visible(emptySel);
+}"""
+
+
+def _wait_for_report_updated(
+    page: Page,
+    *,
+    timeout_ms: int = _REPORT_UPDATED_TIMEOUT_MS,
+    clear_stale: bool = False,
+) -> None:
+    """Wait until snackbar shows the report-updated confirmation."""
+    arg = [SELECTORS.snackbar_container, _REPORT_UPDATED_SNACKBAR]
+    if clear_stale:
+        # Avoid matching a leftover toast from the previous update.
+        try:
+            page.wait_for_function(
+                _SNACKBAR_NOT_UPDATED_JS,
+                arg=arg,
+                timeout=min(timeout_ms, 5_000),
+            )
+        except PlaywrightTimeoutError:
+            pass
+    page.wait_for_function(
+        _SNACKBAR_IS_UPDATED_JS,
+        arg=arg,
+        timeout=timeout_ms,
+    )
+
+
+def _wait_for_report_ready(page: Page, timeout_ms: int = _REPORT_UPDATED_TIMEOUT_MS) -> None:
+    """Wait until the Strategy Tester report finished its initial load after Pine."""
+    page.wait_for_function(
+        _REPORT_READY_JS,
+        arg=[
+            SELECTORS.snackbar_container,
+            _REPORT_UPDATED_SNACKBAR,
+            SELECTORS.strategy_initial_capital,
+            SELECTORS.strategy_key_facts,
+            SELECTORS.strategy_report_empty_title,
+        ],
+        timeout=timeout_ms,
+    )
+
+
+def _open_date_range_preset_popup(page: Page, timeout_ms: int) -> None:
+    """Click date-range menu until the preset popup is visible."""
+    menu = page.locator(SELECTORS.date_range_menu).first
+    menu.wait_for(state="visible", timeout=timeout_ms)
+    popup = page.locator(SELECTORS.date_range_preset_popup).first
+    last_exc: Exception | None = None
+    for _ in range(3):
+        try:
+            menu.click(timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            last_exc = exc
+            # Covered / unstable target — bypass actionability checks.
+            menu.click(force=True, timeout=5_000)
+        try:
+            popup.wait_for(state="visible", timeout=5_000)
+            return
+        except PlaywrightTimeoutError as exc:
+            last_exc = exc
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
+    raise DeepBacktestError(
+        f"Date-range preset popup did not open after clicking menu: {last_exc}"
+    )
+
+
 def strategy_tester_is_open(page: Page) -> bool:
     """True when the Strategy Tester date-range menu button is present and visible."""
     menu = page.locator(SELECTORS.date_range_menu)
@@ -54,6 +143,8 @@ def open_strategy_tester(page: Page, config: BacktestConfig) -> None:
             state="visible",
             timeout=config.timeout_ms,
         )
+        # Do not click date-range until the post-Pine report has settled.
+        _wait_for_report_ready(page, _REPORT_UPDATED_TIMEOUT_MS)
     except Exception as exc:
         shot = capture_diagnostics(page, config.diagnostics_dir, "open_strategy_tester")
         raise DeepBacktestError(
@@ -66,14 +157,8 @@ def set_deep_backtest_dates(page: Page, config: BacktestConfig) -> None:
     start = _format_tv_date(config.backtest.start)
     end = _format_tv_date(config.backtest.end)
     try:
-        menu = page.locator(SELECTORS.date_range_menu)
-        menu.first.wait_for(state="visible", timeout=config.timeout_ms)
-        page.wait_for_timeout(300)
-        menu.first.click()
+        _open_date_range_preset_popup(page, config.timeout_ms)
 
-        # Preset list popup (scoped — avoid other div.button-XNUivTou on page)
-        preset_popup = page.locator(SELECTORS.date_range_preset_popup)
-        preset_popup.first.wait_for(state="visible", timeout=config.timeout_ms)
         presets = page.locator(SELECTORS.date_range_preset_button)
         presets.last.wait_for(state="visible", timeout=config.timeout_ms)
         page.wait_for_timeout(300)
@@ -104,17 +189,17 @@ def set_deep_backtest_dates(page: Page, config: BacktestConfig) -> None:
         submit.first.click()
         page.wait_for_timeout(300)
 
-        # Wait until TradingView confirms the report refresh (max 120s).
-        page.wait_for_function(
-            """([sel, expected]) => {
-                const el = document.querySelector(sel);
-                return !!el && (el.innerText || '').trim() === expected;
-            }""",
-            arg=[SELECTORS.snackbar_container, _REPORT_UPDATED_SNACKBAR],
-            timeout=_REPORT_UPDATED_TIMEOUT_MS,
+        _wait_for_report_updated(
+            page,
+            timeout_ms=_REPORT_UPDATED_TIMEOUT_MS,
+            clear_stale=True,
         )
     except Exception as exc:
+        if isinstance(exc, DeepBacktestError) and exc.screenshot_path is not None:
+            raise
         shot = capture_diagnostics(page, config.diagnostics_dir, "set_deep_dates")
+        if isinstance(exc, DeepBacktestError):
+            raise DeepBacktestError(str(exc), screenshot_path=shot) from exc
         raise DeepBacktestError(
             f"Failed to set Strategy Tester dates {start} → {end}: {exc}",
             screenshot_path=shot,

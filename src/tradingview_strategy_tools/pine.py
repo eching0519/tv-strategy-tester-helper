@@ -190,10 +190,10 @@ def apply_pine_script(page: Page, source: str, config: BacktestConfig) -> None:
             page.wait_for_timeout(500)
         add_btn.first.click()
 
-        # Surface Pine compile / runtime alert to the caller
+        # Surface Pine compile / runtime alert quickly (do not block 5s on success)
         alert = page.locator(SELECTORS.pine_editor_alert)
         try:
-            alert.first.wait_for(state="visible", timeout=min(config.timeout_ms, 5_000))
+            alert.first.wait_for(state="visible", timeout=1_500)
             message = alert.first.inner_text().strip()
             shot = capture_diagnostics(page, config.diagnostics_dir, "pine_script_alert")
             raise PineEditorError(
