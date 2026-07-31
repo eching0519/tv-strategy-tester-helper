@@ -47,6 +47,10 @@ class Selectors:
     )
     pine_editor_title: str = "div.titleSlot-ITRSDHoo"
     pine_editor_open: str = "div.titleSlot-ITRSDHoo"
+    # New script menu: title button → hover New submenu → Strategy
+    pine_script_title_button: str = 'div[data-qa-id="pine-script-title-button"]'
+    pine_new_menu_button: str = 'div.button-XNUivTou[aria-haspopup="menu"]'
+    pine_new_strategy: str = 'div.button-XNUivTou[aria-label="Strategy"]'
     # Monaco editor line (click to focus before select-all / paste)
     pine_editor_view_line: str = "div.monaco-scrollable-element div.view-line"
     pine_add_to_chart: str = 'button[data-qa-id="add-script-to-chart"]'
